@@ -12,7 +12,7 @@ import {
   Copy,
   Check,
   ExternalLink,
-  Code,
+  Code, BriefcaseBusiness
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -44,6 +44,7 @@ interface ApiResponse {
   responseSheetUrl?: string;
   responseSheetTabId?: number;
   responseSheetTabName?: string;
+  company?: string;
   error?: string;
 }
 
@@ -72,14 +73,15 @@ MAPPING RULES:
 - skills: From "Mandatory Technologies Required" ONLY (mandatory, not optional)
 - timing: From "Work Timings" field (e.g., "9am-6pm")
 - interview_mode: From "Mode of Interview Process"
-- interview_rounds: From "Online Interview Rounds" + "Offline Interview Rounds"
+- interview_rounds: From "Online Interview Rounds" and "Offline Interview Rounds"
+- techstack: FROM "Job Track
 
 CRITICAL:
 - If field missing, use "--"
 - Stipend: digits only
 - Duration: Extract the "Internship Duration" value, but strictly convert any words into numbers (e.g., transform "Six Months" into "6 Months").
 - Skills: Use comma separation for multiple
-- Interview rounds: List all rounds with comma separation
+- Interview rounds: List all rounds, format should be "Round Name(Type)" (e.g., "Technical Round 1(Online), HR(Offline)", "Technical Round(Online), HR(Online)" etc extact round name and based on the mode mentioned for each round)
 - jd: MUST contain ONLY: Company, Role, Stipend, Location, Duration, Skills Required, Work Timings, Mode of Interview, Interview Rounds separated by \\n
 
 Return ONLY valid JSON, no explanations:
@@ -371,8 +373,7 @@ function ImageSidebar({
         <img
           src={preview}
           alt="JD source"
-          className="w-full rounded-xl object-contain border border-slate-100"
-          style={{ maxHeight: "420px" }}
+          className="w-full rounded-xl max-h-max object-cover border border-slate-100"
         />
       )}
       {file && (
@@ -548,7 +549,7 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-50 font-sans">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
               <svg
@@ -596,7 +597,7 @@ export default function Dashboard() {
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-6 py-8">
+      <div className="max-w-full mx-auto px-6 py-8">
         {/* Step bar */}
         <div className="flex items-center gap-0 mb-8">
           {steps.map((label, i) => (
@@ -664,8 +665,8 @@ export default function Dashboard() {
 
         {/* ══ STEP 1: Upload ══ */}
         {(step === "upload" || step === "extracting") && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Drop zone */}
+          <div className="flex flex-col gap-6 max-w-7xl mx-auto w-full">
+            {/* Top Section: Drop zone / Full Width Preview */}
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -678,30 +679,40 @@ export default function Dashboard() {
                 const f = e.dataTransfer.files[0];
                 if (f) pickFile(f);
               }}
-              className={`rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center min-h-80 gap-4 p-8 cursor-pointer
-                ${drag ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-white hover:border-blue-400 hover:bg-slate-50"}`}
-              onClick={() => inputRef.current?.click()}
+              className={`rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-4 cursor-pointer overflow-hidden
+        ${preview ? "p-0 border-transparent bg-transparent" : "min-h-80 p-8 border-slate-300 bg-white hover:border-blue-400 hover:bg-slate-50"}
+        ${drag ? "border-blue-500 bg-blue-50" : ""}`}
+              onClick={() => !preview && inputRef.current?.click()}
             >
               {preview ? (
-                <>
-                  <div className="relative">
+                <div className="flex flex-col items-center gap-3 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm w-full">
+                  <div className="relative w-full flex justify-center bg-slate-50 rounded-xl overflow-hidden p-2">
                     <img
                       src={preview}
                       alt="JD preview"
-                      className="rounded-xl object-contain border border-slate-200 shadow-sm"
-                      style={{ maxHeight: "280px" }}
+                      className="max-w-full h-auto max-h-full object-cover rounded-lg border border-slate-200/60 shadow-sm"
                     />
-                    <span className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                    <span className="absolute top-4 right-4 bg-green-500 text-white text-xs px-2.5 py-1 bounding-sm rounded-full font-medium shadow-sm">
                       Ready
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 max-w-xs text-center truncate">
-                    {file?.name}
-                  </p>
-                  <span className="text-xs text-blue-600 underline underline-offset-2">
-                    Change image
-                  </span>
-                </>
+
+                  <div className="flex items-center justify-between gap-4 w-full mt-1 px-2">
+                    <p className="text-xs font-medium text-slate-500 truncate max-w-md">
+                      {file?.name}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation(); // Prevents file explorer layout trigger loop
+                        inputRef.current?.click();
+                      }}
+                      className="text-xs text-blue-600 font-semibold hover:text-blue-700 underline underline-offset-2 transition-all shrink-0"
+                    >
+                      Change image
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <>
                   <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center">
@@ -741,8 +752,9 @@ export default function Dashboard() {
               />
             </div>
 
-            {/* Info + action */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col gap-5">
+            {/* Bottom Section: Info Steps + Execution Action CTA */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col gap-6 shadow-sm">
+              {/* Top Heading */}
               <div>
                 <h2 className="font-semibold text-slate-800 text-sm mb-1">
                   How it works
@@ -751,7 +763,9 @@ export default function Dashboard() {
                   3 simple steps to create your internship form
                 </p>
               </div>
-              <div className="space-y-4">
+
+              {/* Step Items Grid (Changed to single row grid for neat full-width layout) */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   {
                     icon: Upload,
@@ -769,27 +783,34 @@ export default function Dashboard() {
                     desc: "Edit if needed, then create the Google Form",
                   },
                 ].map((item, i) => (
-                  <div key={i} className="flex gap-3 items-start">
-                    <div className="p-1.5 bg-slate-50 border border-slate-100 rounded-lg text-slate-600 flex items-center justify-center mt-0.5">
+                  <div
+                    key={i}
+                    className="flex gap-3 items-start p-3 bg-slate-50/50 rounded-xl border border-slate-100"
+                  >
+                    <div className="p-1.5 bg-white border border-slate-100 rounded-lg text-slate-600 flex items-center justify-center mt-0.5 shrink-0 shadow-sm">
                       <item.icon className="w-3.5 h-3.5" />
                     </div>
                     <div>
-                      <p className="text-xs font-medium text-slate-700">
+                      <p className="text-xs font-semibold text-slate-700">
                         {item.title}
                       </p>
-                      <p className="text-xs text-black/80">{item.desc}</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                        {item.desc}
+                      </p>
                     </div>
                   </div>
                 ))}
               </div>
-              <div className="mt-auto">
+
+              {/* Bottom Section: Action Button */}
+              <div className="pt-2 border-t border-slate-100">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     extract();
                   }}
                   disabled={!file || step === "extracting"}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl px-4 py-3 flex items-center justify-center gap-2 transition-colors"
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl px-4 py-3.5 flex items-center justify-center gap-2 transition-colors shadow-sm"
                 >
                   {step === "extracting" ? (
                     <>
@@ -810,7 +831,7 @@ export default function Dashboard() {
         {/* ══ STEP 2: Review & Edit ══ */}
         {(step === "review" || step === "sending") && form && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-2">
               <ImageSidebar
                 preview={preview}
                 file={file}
@@ -818,16 +839,22 @@ export default function Dashboard() {
                 onReset={reset}
               />
             </div>
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-2xl border border-slate-200 p-6">
-                <h2 className="font-semibold text-slate-800 text-sm mb-1">
-                  Review & edit extracted data
-                </h2>
-                <p className="text-xs text-black/80 mb-6">
-                  All fields are editable. Confirm before sending to Google Apps
-                  Script.
-                </p>
-                <div className="space-y-4">
+            <div className="lg:col-span-1">
+              {/* The container is constrained to a fixed height (e.g., 600px or screen-based max-h-[calc(100vh-200px)]) */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col h-9/12 overflow-hidden shadow-sm">
+                {/* Static Header */}
+                <div className="shrink-0">
+                  <h2 className="font-semibold text-slate-800 text-sm mb-1">
+                    Review & edit extracted data
+                  </h2>
+                  <p className="text-xs text-black/80 mb-6">
+                    All fields are editable. Confirm before sending to Google
+                    Apps Script.
+                  </p>
+                </div>
+
+                {/* Scrollable Fields Wrapper */}
+                <div className="flex-1 overflow-y-auto pr-2 space-y-4">
                   {FIELDS.map(({ key, label, hint, multiline }) => (
                     <div
                       key={key}
@@ -846,7 +873,7 @@ export default function Dashboard() {
                           value={`${form[key]}`}
                           onChange={(e) => setField(key, e.target.value)}
                           rows={6}
-                          className="w-full text-xs font-mono border border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y bg-slate-50"
+                          className="w-full h-44 min-h-30 text-xs font-mono border border-slate-200 rounded-xl px-3 py-2.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y bg-slate-50"
                         />
                       ) : (
                         <input
@@ -859,7 +886,9 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
-                <div className="flex gap-3 mt-8 pt-5 border-t border-slate-100">
+
+                {/* Static Footer Actions */}
+                <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100 shrink-0">
                   <button
                     onClick={reset}
                     disabled={step === "sending"}
@@ -1159,6 +1188,42 @@ export default function Dashboard() {
                         </button>
                       </div>
                     )}
+                    {apiResp?.formTitle && (
+                      <div className="grid grid-cols-[160px_1fr_auto] gap-3 px-5 py-3 items-center hover:bg-slate-50/50 transition-colors group">
+                        {/* Column 1: Label */}
+                        <span className="text-xs font-medium text-black">
+                          Company Name
+                        </span>
+
+                        {/* Column 2: Icon + Code Content */}
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          <div className="p-1 bg-slate-50 border border-slate-100 rounded text-slate-500 shrink-0">
+                            <BriefcaseBusiness className="w-3 h-3" />
+                          </div>
+                          <span className="text-xs font-mono text-slate-700 break-all select-all leading-relaxed">
+                            {apiResp?.formTitle.split(/\s*[\-\–\—]\s*/)[1] || ""}
+                          </span>
+                        </div>
+
+                        {/* Column 3: Copy Action Button */}
+                        <button
+                          onClick={() =>
+                            handleCopy(
+                              apiResp?.formTitle && apiResp?.formTitle.split(/\s*[\-\–\—]\s*/)[1],
+                              "prefill-code",
+                            )
+                          }
+                          className="p-1.5 rounded-md hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors md:opacity-0 group-hover:opacity-100 focus:opacity-100"
+                          title="Copy code"
+                        >
+                          {copiedId === "prefill-code" ? (
+                            <Check className="w-3.5 h-3.5 text-green-600" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* WhatsApp template */}
@@ -1169,12 +1234,17 @@ export default function Dashboard() {
                           WhatsApp template
                         </p>
                         <p className="text-xs text-slate-500">
-                          Edit the message before copying. Dynamic fields come from the extracted JD data.
+                          Edit the message before copying. Dynamic fields come
+                          from the extracted JD data.
                         </p>
                       </div>
                       <button
                         onClick={() =>
-                          handleCopy(whatsappTemplate, "whatsapp-template", 1200)
+                          handleCopy(
+                            whatsappTemplate,
+                            "whatsapp-template",
+                            1200,
+                          )
                         }
                         className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 transition-colors"
                       >
