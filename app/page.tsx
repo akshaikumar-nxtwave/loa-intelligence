@@ -20,7 +20,7 @@ interface JDData {
   company: string;
   companylinkedinlink: string;
   companywebsite: string;
-  formname: string;
+  responseformname: string;
   role: string;
   stipend: string;
   location: string;
@@ -272,7 +272,7 @@ async function sendToAppsScript(
   payload: Pick<
     JDData,
     | "company"
-    | "formname"
+    | "responseformname"
     | "jd"
     | "techstack"
     | "location"
@@ -302,7 +302,7 @@ const FIELDS: {
   { key: "company", label: "Company" },
   { key: "companylinkedinlink", label: "Company LinkedIn" },
   { key: "companywebsite", label: "Company Website" },
-  { key: "formname", label: "Form Name", hint: "auto: Company – Role" },
+  { key: "responseformname", label: "Response Sheet Name", hint: "auto: Company – Role" },
   { key: "role", label: "Role" },
   { key: "stipend", label: "Stipend", hint: "digits only" },
   { key: "location", label: "Location" },
@@ -502,7 +502,7 @@ export default function Dashboard() {
     try {
       const resp = await sendToAppsScript({
         company: form.company,
-        formname: form.formname,
+        responseformname: form.responseformname,
         jd: form.jd,
         techstack: form.techstack,
         location: form.location,
@@ -530,8 +530,8 @@ export default function Dashboard() {
       const updated = { ...prev, [key]: val };
       if (key === "company" || key === "role") {
         const autoName = `${key === "company" ? val : prev.company} - ${key === "role" ? val : prev.role}`;
-        if (prev.formname === `${prev.company} - ${prev.role}`)
-          updated.formname = autoName;
+        if (prev.responseformname === `${prev.company} - ${prev.role}`)
+          updated.responseformname = autoName;
       }
       return updated;
     });
