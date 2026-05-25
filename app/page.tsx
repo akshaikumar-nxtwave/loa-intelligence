@@ -12,7 +12,9 @@ import {
   Copy,
   Check,
   ExternalLink,
-  Code, BriefcaseBusiness
+  Code,
+  BriefcaseBusiness,
+  X,
 } from "lucide-react";
 
 /* ─── Types ─────────────────────────────────────────────────── */
@@ -60,7 +62,7 @@ function toBase64(file: File): Promise<string> {
   });
 }
 
-const PROMPT = `You are a HubSpot job posting data extractor. Extract ONLY these fields from the image and return valid JSON.
+const PROMPT = `You are a HubSpot job posting data extractor. Extract ONLY these fields from the image(s) and return valid JSON.
 
 MAPPING RULES:
 - company: From "Association" field
@@ -103,6 +105,7 @@ Return ONLY valid JSON, no explanations:
 }`;
 
 const AS_URL = process.env.NEXT_PUBLIC_AS_URL as string;
+const MAX_IMAGES = 3;
 
 function normalizeDuration(value: string): string {
   const trimmed = value.trim();
@@ -202,10 +205,17 @@ function sanitizeJsonString(jsonText: string): string {
 }
 
 async function extractFromMistral(
-  base64: string,
-  mime: string,
+  base64Array: string[],
+  mimeArray: string[],
 ): Promise<JDData> {
   const key = process.env.NEXT_PUBLIC_MISTRAL_API_KEY as string;
+
+  // Build content array with all images
+  const imageContent = base64Array.map((base64, index) => ({
+    type: "image_url" as const,
+    image_url: { url: `data:${mimeArray[index]};base64,${base64}` },
+  }));
+
   const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -217,18 +227,13 @@ async function extractFromMistral(
       messages: [
         {
           role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: `data:${mime};base64,${base64}` },
-            },
-            { type: "text", text: PROMPT },
-          ],
+          content: [...imageContent, { type: "text", text: PROMPT }],
         },
       ],
       max_tokens: 1024,
     }),
   });
+
   if (!res.ok)
     throw new Error(`Mistral error ${res.status}: ${await res.text()}`);
 
@@ -302,7 +307,11 @@ const FIELDS: {
   { key: "company", label: "Company" },
   { key: "companylinkedinlink", label: "Company LinkedIn" },
   { key: "companywebsite", label: "Company Website" },
-  { key: "responseformname", label: "Response Sheet Name", hint: "auto: Company – Role" },
+  {
+    key: "responseformname",
+    label: "Response Sheet Name",
+    hint: "auto: Company – Role",
+  },
   { key: "role", label: "Role" },
   { key: "stipend", label: "Stipend", hint: "digits only" },
   { key: "location", label: "Location" },
@@ -350,35 +359,52 @@ function Spinner({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
-/* ─── Shared sidebar (image + meta) ─────────────────────────── */
+/* ─── Shared sidebar (images + meta) ─────────────────────────── */
 function ImageSidebar({
-  preview,
-  file,
+  previews,
+  files,
   aiData,
   onReset,
+  onRemoveImage,
   resetLabel = "Start over",
 }: {
-  preview: string | null;
-  file: File | null;
+  previews: string[];
+  files: File[];
   aiData: JDData | null;
   onReset: () => void;
+  onRemoveImage: (index: number) => void;
   resetLabel?: string;
 }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4 sticky top-20">
       <p className="text-xs font-semibold text-black uppercase tracking-wide mb-3">
-        Source image
+        Source images ({previews.length}/{MAX_IMAGES})
       </p>
-      {preview && (
-        <img
-          src={preview}
-          alt="JD source"
-          className="w-full rounded-xl max-h-max object-cover border border-slate-100"
-        />
+
+      {previews.length > 0 && (
+        <div className="grid grid-cols-1 gap-2 mb-3">
+          {previews.map((preview, index) => (
+            <div key={index} className="relative group">
+              <img
+                src={preview}
+                alt={`JD source ${index + 1}`}
+                className=" rounded-xl object-cover border border-slate-100"
+              />
+              <button
+                onClick={() => onRemoveImage(index)}
+                className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="Remove image"
+              >
+                <X className="w-3 h-3" />
+              </button>
+              <p className="text-[9px] text-black mt-1 truncate">
+                {files[index]?.name}
+              </p>
+            </div>
+          ))}
+        </div>
       )}
-      {file && (
-        <p className="text-[10px] text-black mt-2 truncate">{file.name}</p>
-      )}
+
       {aiData && (
         <details className="mt-3">
           <summary className="text-xs text-black cursor-pointer hover:text-slate-600 select-none">
@@ -389,6 +415,7 @@ function ImageSidebar({
           </pre>
         </details>
       )}
+
       <button
         onClick={onReset}
         className="mt-4 w-full text-xs text-black hover:text-red-500 border border-slate-100 hover:border-red-200 rounded-xl py-2 transition-colors flex items-center justify-center gap-1.5"
@@ -415,8 +442,8 @@ function ImageSidebar({
 /* ─── Main component ─────────────────────────────────────────── */
 export default function Dashboard() {
   const [step, setStep] = useState<Step>("upload");
-  const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [previews, setPreviews] = useState<string[]>([]);
   const [aiData, setAiData] = useState<JDData | null>(null);
   const [form, setForm] = useState<JDData | null>(null);
   const [apiResp, setApiResp] = useState<ApiResponse | null>(null);
@@ -439,21 +466,56 @@ export default function Dashboard() {
     setTimeout(() => setCopiedId(null), duration);
   };
 
-  const pickFile = useCallback((f: File) => {
-    if (!f.type.startsWith("image/")) {
-      setError("Please upload an image file.");
-      return;
-    }
-    setError(null);
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
-  }, []);
+  const pickFiles = useCallback(
+    (newFiles: FileList) => {
+      const validFiles: File[] = [];
+
+      for (let i = 0; i < newFiles.length; i++) {
+        const f = newFiles[i];
+        if (!f.type.startsWith("image/")) {
+          setError(
+            `File "${f.name}" is not an image. Please upload image files only.`,
+          );
+          continue;
+        }
+        validFiles.push(f);
+      }
+
+      if (validFiles.length === 0) return;
+
+      // Check total limit
+      const totalFiles = files.length + validFiles.length;
+      if (totalFiles > MAX_IMAGES) {
+        setError(
+          `Maximum ${MAX_IMAGES} images allowed. You're trying to add ${validFiles.length} files.`,
+        );
+        return;
+      }
+
+      setError(null);
+
+      // Add new files and previews
+      const newPreviews = validFiles.map((f) => URL.createObjectURL(f));
+      setFiles((prev) => [...prev, ...validFiles]);
+      setPreviews((prev) => [...prev, ...newPreviews]);
+    },
+    [files.length],
+  );
+
+  const removeImage = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setPreviews((prev) => {
+      URL.revokeObjectURL(prev[index]);
+      return prev.filter((_, i) => i !== index);
+    });
+  };
 
   /* Full reset — clears everything */
   const reset = () => {
     setStep("upload");
-    setFile(null);
-    setPreview(null);
+    previews.forEach((p) => URL.revokeObjectURL(p));
+    setFiles([]);
+    setPreviews([]);
     setAiData(null);
     setForm(null);
     setApiResp(null);
@@ -469,12 +531,14 @@ export default function Dashboard() {
   };
 
   const extract = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setStep("extracting");
     setError(null);
     try {
-      const b64 = await toBase64(file);
-      const data = await extractFromMistral(b64, file.type);
+      const base64Array = await Promise.all(files.map((f) => toBase64(f)));
+      const mimeArray = files.map((f) => f.type);
+
+      const data = await extractFromMistral(base64Array, mimeArray);
       const normalized = {
         ...data,
         companylinkedinlink: data.companylinkedinlink || "--",
@@ -482,7 +546,7 @@ export default function Dashboard() {
         duration: normalizeDuration(data.duration || ""),
       };
       const formname = `${normalized.company} - ${normalized.role}`;
-      const payload = { ...normalized, formname };
+      const payload = { ...normalized, responseformname: formname };
       setAiData(payload);
       setForm(payload);
       setStep("review");
@@ -514,7 +578,6 @@ export default function Dashboard() {
       setApiResp(resp);
       setStep("done");
     } catch (e) {
-      /* Stay on "done" step to show error — data is fully preserved */
       setSendError(e instanceof Error ? e.message : "Submission failed");
       setApiResp({
         success: false,
@@ -570,7 +633,7 @@ export default function Dashboard() {
               JD Extractor
             </span>
             <span className="text-black/80 text-xs hidden sm:block">
-              · HubSpot internship posting processor
+              · HubSpot internship posting processor (up to 3 images)
             </span>
           </div>
           {step !== "upload" && (
@@ -666,7 +729,7 @@ export default function Dashboard() {
         {/* ══ STEP 1: Upload ══ */}
         {(step === "upload" || step === "extracting") && (
           <div className="flex flex-col gap-6 max-w-7xl mx-auto w-full">
-            {/* Top Section: Drop zone / Full Width Preview */}
+            {/* Top Section: Drop zone */}
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -676,41 +739,79 @@ export default function Dashboard() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDrag(false);
-                const f = e.dataTransfer.files[0];
-                if (f) pickFile(f);
+                pickFiles(e.dataTransfer.files);
               }}
               className={`rounded-2xl border-2 border-dashed transition-all flex flex-col items-center justify-center gap-4 cursor-pointer overflow-hidden
-        ${preview ? "p-0 border-transparent bg-transparent" : "min-h-80 p-8 border-slate-300 bg-white hover:border-blue-400 hover:bg-slate-50"}
+        ${previews.length > 0 ? "p-0 border-transparent bg-transparent" : "min-h-80 p-8 border-slate-300 bg-white hover:border-blue-400 hover:bg-slate-50"}
         ${drag ? "border-blue-500 bg-blue-50" : ""}`}
-              onClick={() => !preview && inputRef.current?.click()}
+              onClick={() => previews.length === 0 && inputRef.current?.click()}
             >
-              {preview ? (
-                <div className="flex flex-col items-center gap-3 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm w-full">
-                  <div className="relative w-full flex justify-center bg-slate-50 rounded-xl overflow-hidden p-2">
-                    <img
-                      src={preview}
-                      alt="JD preview"
-                      className="max-w-full h-auto max-h-full object-cover rounded-lg border border-slate-200/60 shadow-sm"
-                    />
-                    <span className="absolute top-4 right-4 bg-green-500 text-white text-xs px-2.5 py-1 bounding-sm rounded-full font-medium shadow-sm">
-                      Ready
-                    </span>
+              {previews.length > 0 ? (
+                <div className="flex flex-col gap-3 bg-white border border-slate-200 p-5 rounded-2xl shadow-sm w-full">
+                  {/* Images Grid */}
+                  <div className="grid grid-cols-3 gap-3">
+                    {previews.map((preview, index) => (
+                      <div key={index} className="relative group">
+                        <img
+                          src={preview}
+                          alt={`JD preview ${index + 1}`}
+                          className="w-full rounded-xl object-cover border border-slate-200/60 shadow-sm aspect-square"
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeImage(index);
+                          }}
+                          className="absolute top-1.5 right-1.5 bg-red-500 text-white rounded-full p-1.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="Remove image"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                        <span className="absolute bottom-1.5 left-1.5 bg-blue-600 text-white text-xs px-2 py-0.5 rounded font-medium">
+                          {index + 1}/{previews.length}
+                        </span>
+                      </div>
+                    ))}
                   </div>
 
-                  <div className="flex items-center justify-between gap-4 w-full mt-1 px-2">
-                    <p className="text-xs font-medium text-slate-500 truncate max-w-md">
-                      {file?.name}
+                  {/* File names and controls */}
+                  <div className="border-t border-slate-100 pt-3 mt-1">
+                    <p className="text-xs text-slate-600 mb-2 font-medium">
+                      Images ({previews.length}/{MAX_IMAGES})
                     </p>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation(); // Prevents file explorer layout trigger loop
-                        inputRef.current?.click();
-                      }}
-                      className="text-xs text-blue-600 font-semibold hover:text-blue-700 underline underline-offset-2 transition-all shrink-0"
-                    >
-                      Change image
-                    </button>
+                    <div className="space-y-1 mb-3">
+                      {files.map((f, i) => (
+                        <p key={i} className="text-xs text-slate-500 truncate">
+                          {i + 1}. {f.name}
+                        </p>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      {previews.length < MAX_IMAGES && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            inputRef.current?.click();
+                          }}
+                          className="text-xs text-blue-600 font-semibold hover:text-blue-700 underline underline-offset-2 transition-all"
+                        >
+                          Add more images
+                        </button>
+                      )}
+                      {previews.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            reset();
+                          }}
+                          className="text-xs text-red-600 font-semibold hover:text-red-700 underline underline-offset-2 transition-all"
+                        >
+                          Clear all
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -732,10 +833,10 @@ export default function Dashboard() {
                   </div>
                   <div className="text-center">
                     <p className="text-sm font-medium text-slate-700">
-                      Drop your HubSpot JD image here
+                      Drop your HubSpot JD images here
                     </p>
                     <p className="text-xs text-slate-400 mt-1">
-                      PNG, JPG, WEBP — click to browse
+                      PNG, JPG, WEBP — up to {MAX_IMAGES} images
                     </p>
                   </div>
                 </>
@@ -744,10 +845,10 @@ export default function Dashboard() {
                 ref={inputRef}
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
                 onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) pickFile(f);
+                  if (e.target.files) pickFiles(e.target.files);
                 }}
               />
             </div>
@@ -764,13 +865,13 @@ export default function Dashboard() {
                 </p>
               </div>
 
-              {/* Step Items Grid (Changed to single row grid for neat full-width layout) */}
+              {/* Step Items Grid */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {[
                   {
                     icon: Upload,
-                    title: "Upload JD image",
-                    desc: "Take a screenshot of your HubSpot job posting",
+                    title: "Upload JD images",
+                    desc: "Upload up to 3 screenshots of your HubSpot job posting",
                   },
                   {
                     icon: Sparkles,
@@ -809,7 +910,7 @@ export default function Dashboard() {
                     e.stopPropagation();
                     extract();
                   }}
-                  disabled={!file || step === "extracting"}
+                  disabled={files.length === 0 || step === "extracting"}
                   className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl px-4 py-3.5 flex items-center justify-center gap-2 transition-colors shadow-sm"
                 >
                   {step === "extracting" ? (
@@ -819,7 +920,7 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <Zap className="w-4 h-4 fill-current" />
-                      Extract JD Data
+                      Extract JD Data ({files.length}/{MAX_IMAGES} images)
                     </>
                   )}
                 </button>
@@ -831,17 +932,19 @@ export default function Dashboard() {
         {/* ══ STEP 2: Review & Edit ══ */}
         {(step === "review" || step === "sending") && form && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
+            {/* Adjusted wrapper for scrolling */}
+            <div className="lg:col-span-2 h-[calc(100vh-100px)] overflow-y-auto custom-scrollbar">
               <ImageSidebar
-                preview={preview}
-                file={file}
+                previews={previews}
+                files={files}
                 aiData={aiData}
                 onReset={reset}
+                onRemoveImage={removeImage}
               />
             </div>
             <div className="lg:col-span-1">
               {/* The container is constrained to a fixed height (e.g., 600px or screen-based max-h-[calc(100vh-200px)]) */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col h-9/12 overflow-hidden shadow-sm">
+              <div className="bg-white rounded-2xl border border-slate-200 p-6 flex flex-col h-212 overflow-hidden shadow-sm">
                 {/* Static Header */}
                 <div className="shrink-0">
                   <h2 className="font-semibold text-slate-800 text-sm mb-1">
@@ -943,16 +1046,17 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ══ STEP 3: Done ══ — same 3-col layout, image stays visible */}
+        {/* ══ STEP 3: Done ══ */}
         {step === "done" && apiResp && form && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Left: image sidebar — still visible */}
+            {/* Left: image sidebar */}
             <div className="lg:col-span-1">
               <ImageSidebar
-                preview={preview}
-                file={file}
+                previews={previews}
+                files={files}
                 aiData={aiData}
                 onReset={reset}
+                onRemoveImage={removeImage}
                 resetLabel="Clear & start over"
               />
             </div>
@@ -1201,7 +1305,8 @@ export default function Dashboard() {
                             <BriefcaseBusiness className="w-3 h-3" />
                           </div>
                           <span className="text-xs font-mono text-slate-700 break-all select-all leading-relaxed">
-                            {apiResp?.formTitle.split(/\s*[\-\–\—]\s*/)[1] || ""}
+                            {apiResp?.formTitle.split(/\s*[\-\–\—]\s*/)[1] ||
+                              ""}
                           </span>
                         </div>
 
@@ -1209,7 +1314,8 @@ export default function Dashboard() {
                         <button
                           onClick={() =>
                             handleCopy(
-                              apiResp?.formTitle && apiResp?.formTitle.split(/\s*[\-\–\—]\s*/)[1],
+                              apiResp?.formTitle &&
+                                apiResp?.formTitle.split(/\s*[\-\–\—]\s*/)[1],
                               "prefill-code",
                             )
                           }
