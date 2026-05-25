@@ -69,11 +69,11 @@ MAPPING RULES:
 - companylinkedinlink: FROM "LinkedIn company page"
 - companywebsite: FROM "Website URL"
 - role: From "Role Name" under Job Details
-- stipend: IF Range of stipend is specified, extract From "Min internship stipend" and "Max internship stipend" give it in (- separated, for eg: "Min internship Stipend value-Max internship Stipend value"), If both MIN and MAX are same give the "MIN internship stipend" (digits only, no currency)
+- stipend: IF Range of stipend is specified, extract From "Min internship stipend" and "Max internship stipend" give it in (- separated, for eg: "Min internship Stipend value-Max internship Stipend value"), If both MIN and MAX are same give the "MIN internship stipend" (digits only, no currency, give in numeric thousand format if mentioned as 15 give it in 15000, if zeros are mentioned dont add more zeors to it)
 - location: From "Location" field
 - duration: From "Internship Duration" (e.g., transform "Six Months" into "6 Months")
 - skills: From "Mandatory Technologies Required" ONLY (mandatory, not optional)
-- timing: From "Work Timings" field (e.g., "9am-6pm")
+- timing: From "No. of Working Days and Work Timings" field  (e.g., transform "9-6" into "9 AM - 6 PM" and give "6 days a week, 9 AM - 6 PM" or "5 days a week, 10 AM - 5 PM" etc based on the info given in the field give "No.of working days a week, Work Timings")
 - interview_mode: From "Mode of Interview Process"
 - interview_rounds: From "Online Interview Rounds" and "Offline Interview Rounds"
 - techstack: FROM "Job Track
@@ -265,7 +265,6 @@ Company JD:
 ${data.jd}
 Company LinkedIn: ${data.companylinkedinlink}
 Company Website: ${data.companywebsite}
-NOTE: Need to submit the projects on time
 
 👉 Apply here: https://forms.ccbp.in/${data.company.split(" ").join("").toLocaleLowerCase()}
 Learning Material: https://comfortable-valley-8f0.notion.site/Placement-Preparation-Guide-33a7bfa973ff80eabaf1de7b17d0b4be
@@ -755,7 +754,7 @@ export default function Dashboard() {
                         <img
                           src={preview}
                           alt={`JD preview ${index + 1}`}
-                          className="w-full rounded-xl object-cover border border-slate-200/60 shadow-sm aspect-square"
+                          className="w-full rounded-xl object-cover border border-slate-200/60 shadow-sm"
                         />
                         <button
                           onClick={(e) => {
@@ -1305,7 +1304,7 @@ export default function Dashboard() {
                             <BriefcaseBusiness className="w-3 h-3" />
                           </div>
                           <span className="text-xs font-mono text-slate-700 break-all select-all leading-relaxed">
-                            {apiResp?.formTitle.split(/\s*[\-\–\—]\s*/)[1] ||
+                            {apiResp?.formTitle ||
                               ""}
                           </span>
                         </div>
