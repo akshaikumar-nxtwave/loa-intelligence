@@ -313,7 +313,7 @@ const FIELDS: {
     hint: "auto: Company – Role",
   },
   { key: "role", label: "Role" },
-  { key: "stipend", label: "Stipend", hint: "digits only" },
+  { key: "stipend", label: "Stipend", hint: "Min-Max" },
   { key: "location", label: "Location" },
   { key: "duration", label: "Duration", hint: "e.g. 6 Months" },
   { key: "skills", label: "Skills", hint: "comma-separated" },
